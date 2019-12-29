@@ -1,0 +1,55 @@
+"""Simple push update listener example."""
+
+import sys
+import asyncio
+import aiohttp
+from pyatv import helpers
+
+
+class PushListener:
+    """Internal listener for push updates."""
+
+    def __init__(self, session):
+        self.session = session
+
+    async def _post(self, playstatus):
+        # This should correspond to the json data expected by the API
+        payload = {
+            'title': playstatus.title
+        }
+
+        # Change address to some API endpoint
+        async with self.session.post(
+                'http://somehost/api/test', json=payload) as resp:
+            # This just prints the response - do something useful here
+            print('Response: ', await resp.text())
+
+    def playstatus_update(self, _, playstatus):
+        """
+        asyncio.ensure_future(self._post(playstatus))
+
+    @staticmethod
+    def playstatus_error(updater, exception):
+        print('An error occurred (restarting): {0}'.format(exception))
+        updater.start(initial_delay=1)
+
+
+async def _listen_for_push_updates(atv):
+    print('Starting to listen for updates')
+    try:
+        with aiohttp.ClientSession() as session:
+            atv.push_updater.listener = PushListener(session)
+            await atv.push_updater.start()
+    except Exception as ex:  # pylint: disable=broad-except
+        print('Got an error: ', ex)
+    finally:
+        await atv.logout()
+
+
+async def _no_device_found():
+    print('No Apple TV found', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    helpers.auto_connect(_listen_for_push_updates,
+                         not_found=_no_device_found)

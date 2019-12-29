@@ -1,0 +1,3 @@
+[console_scripts]
+atvremote = pyatv.__main__:main
+

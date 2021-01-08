@@ -5,7 +5,7 @@ import base64
 import json
 import pyatv
 from pyatv.const import FeatureName, FeatureState, PowerState
-from pyatv import convert
+from pyatv import convert,interface
 import paho.mqtt.client as mqtt
 from pymongo import MongoClient
 import os
@@ -14,21 +14,63 @@ import os
 from PIL import Image
 from io import BytesIO
 import io
+
+# import MQTT
+
 # import base64
 # import cStringIO
 
 
 LOOP = asyncio.get_event_loop()
 
-hosts = []
+hosts = []  # list of AppleTVHost instances
+devices = []  # list of devices from Config
+host_map = {}  # map <hostname> => AppleTVHost instance
 
+
+def find_device(name):
+    for device in devices:
+        if device["name"] == name:
+            return device
+    return None
+
+
+client = mqtt.Client()
+
+class PushListener(interface.PushListener):
+    def __init__(self, host):
+        self.host = host
+        print("  construct PushListener", host.name);
+
+    @staticmethod
+    def playstatus_update(self, updater, playstatus):
+        print("update", playstatus, flush= True)
+
+    @staticmethod
+    def playstatus_error(self, updater, exception):
+        print("error", exception)
+
+class DeviceListener(interface.DeviceListener):
+    """Internal listener for generic device updates."""
+
+    def __init__(self, host):
+        self.host = host
+        print("  construct DeviceListener", host.name);
+
+    def connection_lost(self, exception):
+        """Call when unexpectedly being disconnected from device."""
+        print("Connection lost with error:", str(exception), file=sys.stderr)
+
+    def connection_closed(self):
+        """Call when connection was (intentionally) closed."""
+        print("Connection was closed properly")
 
 class AppleTVHost:
-    def __init__(self, atv, loop):
-        print("Construct", atv.name)
+    def __init__(self, atv, config, loop):
         print(atv.device_info)
         self.atv = atv
-        self.name = atv.name
+        self.config = config
+        self.name = config["device"]
         self.loop = loop
         self.state = {
             "power": None,
@@ -45,44 +87,73 @@ class AppleTVHost:
             "shuffle": None,
             "artwork": None,
         }
+        topic = "appletv/{}/set/command".format(self.name)
+        client.subscribe(topic)
 
     #
 
-    async def connect(self):
-        print("Connecting to {0} {1}".format(self.atv.address, self.atv.name))
-        self.device = await pyatv.connect(self.atv, self.loop)
 
-        
+    async def publish(self, key, value):
+        topic = "appletv/{}/status/{}".format(self.name, key)
+#         print("publish", topic, value)
+        client.publish(topic, value, retain=True)
+
+    async def connect(self, loop):
+        print("Connecting to {0} {1}".format(self.atv.address, self.atv.name))
+        atv  = await pyatv.connect(self.atv, loop)
+
+#         push_listener = PushListener(self)
+#         device_listener = DeviceListener(self)
+#         atv.listener = device_listener
+#         atv.push_updater.listener = push_listener
+#         atv.push_updater.start()
+        self.device = atv;
+
+#         print("started listener", self.device.push_updater.active, "\n\n")
+
+    async def set_state(self, o):
+        for attr, value in o.items():
+            if o[attr] != self.state[attr]:
+                await self.publish(attr, value)
+                # print("new attr", attr)
+                self.state[attr] = o[attr]
+        # self.state = o
+
     async def run(self):
         power = self.device.power.power_state == PowerState.On
-        print(self.name, power)
         playing = await self.device.metadata.playing()
-        print(self.name, "Currently playing:")
+        if self.name == "appletv-office":
+            print(self.name, "playing\n", playing)
         app = "None"
         try:
             app = self.device.metadata.app.name
-            print(app)
+            # print(app)
         except Exception:
-            print(self.name, "no app")
+            app = "None"
+            pass
+            # print(self.name, "no app")
 
+        print("\n");
+        print("\n");
+        print(self.name, "Power", power, "App", app)
         #### ARTWORK
         artwork = await self.device.metadata.artwork(300, 300)
         if artwork:
-            print(self.name, "artwork:")
             try:
-                file = open("/tmp/foo.jpg", "wb")
+                tmp_filename = "/tmp/{}".format(self.name)
+                file = open(tmp_filename, "wb")
                 file.write(artwork.bytes)
                 file.close()
 
-                file = open("/tmp/foo.jpg", "rb")
+                file = open(tmp_filename, "rb")
                 image_data_binary = file.read()
                 file.close()
                 try:
-                    os.remove("/tmp/foo.jpg");
+                    os.remove(tmp_filename)
                 finally:
                     pass
-                
-                artwork = base64.b64encode(image_data_binary).decode('ascii')
+
+                artwork = base64.b64encode(image_data_binary).decode("ascii")
 
             except Exception as err:
                 artwork = None
@@ -100,40 +171,20 @@ class AppleTVHost:
             "total_time": playing.total_time,
             "repeat": convert.repeat_str(playing.repeat),
             "shuffle": convert.shuffle_str(playing.shuffle),
-            "artwork": artwork,
         }
 
-        for attr, value in o.items():
-            if o[attr] != self.state[attr]:
-                print("new attr", attr)
-        self.state = o
-        print("\n\n\n")
+        if o != self.state:
+            await self.publish("info", json.dumps(o))
 
+        o["artwork"] = artwork
+        await self.set_state(o)
 
+        # self.state = o
+        # print("\n\n\n")
 
+    async def command(self, topic, message):
+        print(self.name, "command", topic, message)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
     #
     async def poweron(self):
         try:
@@ -150,13 +201,6 @@ class AppleTVHost:
             print(self.name, "powered off")
         except BaseException as e:
             print("**** ", self.name, "turn_off failed")
-        # if (
-        #     self.device.features.get_feature(FeatureName.TurnOff)
-        #     == FeatureState.Available
-        # ):
-        # await self.device.power.turn_off()
-        # else:
-        #     print("Can't turn_off ", self.name)
 
     #
     async def home(self):
@@ -164,13 +208,6 @@ class AppleTVHost:
             await self.device.remote_control.home()
         except BaseException:
             print("home failed")
-
-    #
-    async def stop(self):
-        try:
-            await self.device.remote_control.stop()
-        except BaseException:
-            print("stop failed")
 
     #
     async def play(self):
@@ -190,11 +227,11 @@ class AppleTVHost:
 
     #
     def __del__(self):
-        print("dstruct")
+        print(self.name, "destruct")
 
 
 # Method that is dispatched by the asyncio event loop
-async def print_what_is_playing(loop):
+async def init_appletvs(loop):
     """Find a device and print what is playing."""
     print("Discovering devices on network...")
     atvs = await pyatv.scan(loop, timeout=5)
@@ -204,30 +241,33 @@ async def print_what_is_playing(loop):
         return
 
     for atv in atvs:
-        print("==========\n", "atv", atv, "\n")
-        host = AppleTVHost(atv, loop)
-        await host.connect()
-        hosts.append(host)
-        # if host.name == "Office":
-        #     await host.play()
-        # else:
-        await host.poweroff()
-        await host.run()
+        # print("==========\n", "atv", atv, "\n")
+        device = find_device(atv.name)
+        if device != None and atv.name == "Office":
+            hostname = device["device"]
+            print("new host", hostname)
+            host = AppleTVHost(atv, device, loop)
+            hosts.append(host)
+            host_map[hostname] = host
+            await host.connect(loop)
+#             print("RUN")
+            await host.run()
+            # if host.name == "Office":
+            #     await host.play()
+            # else:
+#             await host.poweroff()
 
-    # print("Connecting to {0} {1}".format(atvs[0].address, atvs[0].name))
+#     print("\n\n")
+#     print("Connecting to {0} {1}".format(atvs[0].address, atvs[0].name))
     # atv = await pyatv.connect(atvs[0], loop)
 
-    try:
-        while True:
-            for atv in hosts:
-                await atv.run()
-            # playing = await atv.metadata.playing()
-            # print("Currently playing:")
-            # print(playing)
-            time.sleep(10)
-    finally:
-        # Do not forget to close
-        atv.close()
+#     while True:
+#          time.sleep(1)
+    while True:
+        for atv in hosts:
+            await atv.run()
+#         print("sleep")
+        time.sleep(1)
 
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -235,27 +275,52 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    client.subscribe("autelis/#")
+    client.subscribe("settings/status/config")
 
+
+# set to True after settings received  once
+# the second time message is received, we want to exit
+settings = False
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
-    print("topic " + msg.topic + " message " + msg.payload.decode("utf-8"))
+    global settings
+    message = msg.payload.decode("utf-8")
+    parts = msg.topic.split("/")
+    dest = parts.pop()
+
+    print(
+        "\n\n\n=======> topic " + msg.topic + " message {}".format(msg),
+        parts,
+        dest,
+        parts[0],
+        "\n\n\n",
+    )
+    if dest == "config":
+        if parts[0] == "settings":
+            if settings:
+                print("EXITING!")
+                os._exit(0)
+
+            settings = True
 
 
 def main():
+    hosts = []
     mongo = MongoClient(os.environ.get("MONGO_HOST"))
     db = mongo["settings"]
     collection = db.config
-    raw = collection.find_one({ '_id': "config" })
-    print("raw", raw['appletv'])
+    raw = collection.find_one({"_id": "config"})
+    for atv in raw["appletv"]["devices"]:
+        print("atv", atv["device"], atv)
+        devices.append(atv)
+    # print("raw", raw['appletv']['devices'])
     # config = json.loads(str(raw))
     # print("config", config)
 
-    client = mqtt.Client()
+    print("connecting...")
     client.on_connect = on_connect
     client.on_message = on_message
-    print("connecting...")
     try:
         ret = client.connect("nuc1")
         print("connected " + str(ret))
@@ -264,11 +329,15 @@ def main():
     except Exception as err:
         print("Connect Exception " + str(err))
 
-    LOOP.run_until_complete(print_what_is_playing(LOOP))
+#     asyncio.async(init_appletvs())
+#     asyncio.async(init_appletvs())
+#     LOOP.run_forever()
+    LOOP.run_until_complete(init_appletvs(LOOP))
 
 
 if __name__ == "__main__":
     # Setup event loop and connect
     print("starting")
     main()
-    # LOOP.run_until_complete(print_what_is_playing(LOOP))
+    print("stopping")
+    # LOOP.run_until_complete(init_appletvs(LOOP))

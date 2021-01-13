@@ -69,7 +69,7 @@ async def main():
     collection = db.config
     raw = collection.find_one({"_id": "config"})
     for entry in raw["appletv"]["devices"]:
-        print("entry", entry["device"], entry)
+        # print("entry", entry["device"], entry)
         config.append(entry)
 
     loop = asyncio.get_event_loop()
@@ -102,8 +102,18 @@ async def main():
                 "shuffle": None,
                 "artwork": None,
             };
-            atv = await pyatv.connect(device, loop)
+            # connected = False
+            # while not connected:
+            #     try:
+            #         print("CONNECTING TO ", device.address, device.name)
+            #         atv = await pyatv.connect(device, loop)
+            #         print(" -> CONNECTED", device.address)
+            #         connected = True
+            #     except Exception:
+            #         await atv.close(loop)
+            #         pass
 
+            atv = device
             atvs.append({ 
                 "config": found,
                 "device": device,
@@ -188,7 +198,8 @@ if __name__ == "__main__":
         # client.subscribe("hubitat/#")
         MQTT.loop_start()
     except Exception as err:
-        print("MQTT Connect Exception " + str(err), err)
+        print("MQTT Connect Exception " + str(err), err, MQTT_HOST)
+
     asyncio.get_event_loop().run_until_complete(main())
 
 

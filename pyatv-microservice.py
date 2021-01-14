@@ -10,7 +10,7 @@ from pyatv.const import FeatureName, FeatureState, PowerState
 import paho.mqtt.client as mqtt
 from pymongo import MongoClient
 
-MQTT_HOST=os.environ.get("MQTT_HOST")
+MQTT_HOST=os.environ.get("MQTT_HOSTNAME")
 MONGO_HOST=os.environ.get("MONGO_HOST")
 
 print("MQTT_HOST", MQTT_HOST)
@@ -20,6 +20,7 @@ MQTT = mqtt.Client()
 
 atvs = []
 atv_map = {}
+device_map = {}
 config = []
 config_map = {}
 
@@ -131,6 +132,7 @@ async def main():
     global config
     global atvs
     global config_map
+    global device_map
     global atv_map
 
     print("Getting global Config")
@@ -143,6 +145,7 @@ async def main():
         config_map[ip]= entry
         print("  config", ip, entry['name'], entry['device'])
         config.append(entry)
+        device_map[entry['device']] = entry
 #     config =  get_config()
     print("config_map", config_map.keys())
 
@@ -208,11 +211,14 @@ async def main():
         }
         try:
             app = "None"
-            print("ATV Connecting to ", device['name'], device['appletv'])
+            # print("ATV Connecting to ", device['name'])
 
             atv = await pyatv.connect(device['appletv'], loop)
             device['atv'] = atv
-            print("Connected to ATV")
+            # print("Connected to ATV")
+            topic = "appletv/{}/set/command".format(device['device'])
+            print("subscribe", topic)
+            MQTT.subscribe(topic);
 #         except Exception as err:
         finally:
             pass
@@ -232,12 +238,13 @@ async def main():
 
 
     while True:
-        for item in atvs:
+        for item in config:
+            # print("item", item)
             device = item['device']
-            name = device.name
+            name = item['name']
             atv = item['atv']
-            config = item['config']
-            print("loop", name)
+            conf = item
+            # print("loop", name)
 
             app = "None"
             try:
@@ -247,7 +254,7 @@ async def main():
                 app = "None"
            
             power = atv.power.power_state == PowerState.On
-            print(name, "playing")
+            # print(name, "playing")
             playing = await atv.metadata.playing()
             artwork = await atv.metadata.artwork(300, 300)
             if artwork:
@@ -286,18 +293,18 @@ async def main():
                 "artwork": artwork,
             }
 
-            if o != config['state']:
-                topic = "appletv/{}/status/{}".format(config['device'], "info")
-                print(topic, json.dumps(o)[:40])
+            if o != conf['state']:
+                topic = "appletv/{}/status/{}".format(conf['device'], "info")
+                # print(topic, json.dumps(o)[:40])
                 MQTT.publish(topic, json.dumps(o), retain=True)
             
             for attr, value in o.items():
-#                 print("attr", attr, "value", value, config['state'][attr])
-                if value != config["state"][attr]:
-                    topic = "appletv/{}/status/{}".format(config['device'], attr)
-                    if  device.name == "Office":
-                        print(device.name, "publish", topic, value)
-                    config['state'][attr] = o[attr]
+#                 print("attr", attr, "value", value, conf['state'][attr])
+                if value != conf["state"][attr]:
+                    topic = "appletv/{}/status/{}".format(conf['device'], attr)
+                    # if  name == "Office":
+                    #     print(name, "publish", topic, value)
+                    conf['state'][attr] = o[attr]
                     MQTT.publish(topic, value, retain=True)
 
 
@@ -310,10 +317,9 @@ async def main():
                 device = cmd['device']
                 message = cmd['command']
 
-                print("device", device)
-                print("message", message)
+                print("command", device, message)
 
-                atv = atv_map[device]
+                atv = device_map[device]['atv']
 
                 if message == "STOP":
                     await atv.remote_control.right()

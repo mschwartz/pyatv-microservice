@@ -83,7 +83,7 @@ async def init_appletvs():
     for atv in atvs:
         device = find_device(atv.name)
         print("==========\n", "atv", atv.name, device, "\n")
-        if device != None and atv.name == "Office":
+        if device != None and atv.name == "THEATER":
             print("Connecting")
             hostname = device["device"]
             box = await pyatv.connect(atv, loop)

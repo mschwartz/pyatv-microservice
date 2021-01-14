@@ -5,7 +5,7 @@ import base64
 import json
 import pyatv
 from pyatv.const import FeatureName, FeatureState, PowerState
-from pyatv import convert,interface
+from pyatv import convert, interface
 import paho.mqtt.client as mqtt
 from pymongo import MongoClient
 import os
@@ -23,9 +23,9 @@ import io
 
 LOOP = asyncio.get_event_loop()
 
-hosts = []  # list of AppleTVHost instances
 devices = []  # list of devices from Config
 host_map = {}  # map <hostname> => AppleTVHost instance
+config_map = {}
 
 
 def find_device(name):
@@ -37,25 +37,27 @@ def find_device(name):
 
 client = mqtt.Client()
 
+
 class PushListener(interface.PushListener):
     def __init__(self, device):
         self.device = device
-        print("  construct PushListener", device);
+        print("  construct PushListener", device)
 
     @staticmethod
     def playstatus_update(self, updater, playstatus):
-        print("update", playstatus, flush= True)
+        print("update", playstatus, flush=True)
 
     @staticmethod
     def playstatus_error(self, updater, exception):
         print("error", exception)
+
 
 class DeviceListener(interface.DeviceListener):
     """Internal listener for generic device updates."""
 
     def __init__(self, host):
         self.host = host
-        print("  construct DeviceListener", host.name);
+        print("  construct DeviceListener", host.name)
 
     def connection_lost(self, exception):
         """Call when unexpectedly being disconnected from device."""
@@ -79,19 +81,18 @@ async def init_appletvs():
         return
 
     for atv in atvs:
-        # print("==========\n", "atv", atv, "\n")
         device = find_device(atv.name)
-        if device != None and atv.name == "Office":
+        print("==========\n", "atv", atv.name, device, "\n")
+        if device != None and atv.name == "THEATER":
+            print("Connecting")
             hostname = device["device"]
             box = await pyatv.connect(atv, loop)
-            listener = PushListener(device)
-            box.push_updater.listener = listener;
-            box.push_updater.start()
+            print("connected!", atv.address, atv.name)
+            # listener = PushListener(device)
+            # box.push_updater.listener = listener;
+            # box.push_updater.start()
 
     loop.run_in_executor(None, sys.stdin.readline)
-
-
-
 
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -130,13 +131,12 @@ def on_message(client, userdata, msg):
 
 
 def main():
-    hosts = []
     mongo = MongoClient(os.environ.get("MONGO_HOST"))
     db = mongo["settings"]
     collection = db.config
     raw = collection.find_one({"_id": "config"})
     for atv in raw["appletv"]["devices"]:
-        print("atv", atv["device"], atv)
+        # print("atv", atv["device"], atv)
         devices.append(atv)
     # print("raw", raw['appletv']['devices'])
     # config = json.loads(str(raw))
@@ -153,9 +153,9 @@ def main():
     except Exception as err:
         print("Connect Exception " + str(err))
 
-#     asyncio.async(init_appletvs())
-#     asyncio.async(init_appletvs())
-#     LOOP.run_forever()
+    #     asyncio.async(init_appletvs())
+    #     asyncio.async(init_appletvs())
+    #     LOOP.run_forever()
     asyncio.get_event_loop().run_until_complete(init_appletvs())
 
 

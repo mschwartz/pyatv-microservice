@@ -1,3 +1,5 @@
 .pm2
 *~
 __pycache__
+.forever
+

@@ -255,7 +255,6 @@ async def main():
                 app = "None"
            
             power = atv.power.power_state == PowerState.On
-            # print(name, "playing")
             playing = await atv.metadata.playing()
 
             artwork = await atv.metadata.artwork(300, 300)

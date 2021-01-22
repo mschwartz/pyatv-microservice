@@ -6,6 +6,6 @@ docker run \
     --name="pyatv-microservice" \
     --net=host\
     -e "MONGO_HOST=$MONGO_HOST" \
-    -e "MQTT_HOST=$MQTT_HOSTNAME" \
+    -e "MQTT_HOSTNAME=$MQTT_HOSTNAME" \
     -v $PWD:/home/app \
     robodomo/pyatv-microservice

@@ -2,5 +2,6 @@
 
 while [ true ]
 do
-    python3 ./pyatv-microservice.py
+    echo "starting pyatv-microservice.py"
+    python3 -u ./pyatv-microservice.py
 done

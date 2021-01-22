@@ -9,6 +9,6 @@ RUN useradd --user-group --create-home --shell /bin/false app
 ENV HOME=/home/app
 WORKDIR /home/app
 COPY . /home/app
-CMD ["./entrypoint.sh"]
+CMD ["./loop.sh"]
 
 

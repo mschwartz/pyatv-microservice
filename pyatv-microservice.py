@@ -1,3 +1,5 @@
+#
+#
 import sys
 import os
 import socket
@@ -41,10 +43,11 @@ def find_device(host):
     return None
 
 def on_connect(client, userdata, flags, rc):
-    print("Connected with result code " + str(rc))
+    print("MQTT Connected with result code " + str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe("settings/status/config")
+    client.subscribe("appletv/reset/set/command");
 
 # set to True after settings received  once
 # the second time message is received, we want to exit
@@ -147,7 +150,7 @@ async def main():
         config.append(entry)
         device_map[entry['device']] = entry
 #     config =  get_config()
-    print("config_map", config_map.keys())
+    # print("config_map", config_map.keys())
 
 #     devices = await scan() # get ATVs
     loop = asyncio.get_event_loop()
@@ -158,7 +161,7 @@ async def main():
         scanning = False
         print("Scanning for apple tvs...")
         devices = await pyatv.scan(loop, timeout=5)
-        print("  config_map", config_map.keys())
+        # print("  config_map", config_map.keys())
         if not devices:
             print("No apple tvs found", file=sys.stderr)
             scanning = True
@@ -166,9 +169,7 @@ async def main():
             for atv in devices:
                 ip = str(atv.address)
                 atv_map[ip] = atv
-                print("device", atv.address, atv.name)
-
-            print("  atv_map", atv_map.keys())
+                print("  found device", atv.address, atv.name)
 
             for key in config_map.keys():
                 if key  in atv_map.keys():
@@ -256,6 +257,7 @@ async def main():
             power = atv.power.power_state == PowerState.On
             # print(name, "playing")
             playing = await atv.metadata.playing()
+
             artwork = await atv.metadata.artwork(300, 300)
             if artwork:
                 try:
@@ -318,6 +320,9 @@ async def main():
                 message = cmd['command']
 
                 print("command", device, message)
+                if device == "reset":
+                    print("RECEIVED RESET.  EXITING...\n\n\n");
+                    os._exit(0)
 
                 atv = device_map[device]['atv']
 
@@ -358,6 +363,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    print("\n\npyatv-microservice.py v1.0\n\n");
     print("MQTT connecting...")
     MQTT.on_connect = on_connect
     MQTT.on_message = on_message

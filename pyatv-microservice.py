@@ -342,11 +342,11 @@ async def main():
                         # if  name == "Office":
                         #     print(name, "publish", topic, value)
                         conf['state'][attr] = o[attr]
-                        MQTT.publish(topic, value, retain=True)
+                        MQTT.publish(topic, o[attr], retain=True)
                 except Exception as ex:
-                    try:
-                        MQTT.publish(topic, value, retain=True)
-                    finally:
+#                     try:
+#                         MQTT.publish(topic, value, retain=True)
+#                     finally:
                         pass
                     
 

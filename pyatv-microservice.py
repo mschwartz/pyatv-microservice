@@ -8,7 +8,7 @@ import asyncio
 import base64
 import pyatv
 from pyatv import convert, interface
-from pyatv.const import FeatureName, FeatureState, PowerState
+from pyatv.const import FeatureName, FeatureState, PowerState, Protocol
 import paho.mqtt.client as mqtt
 from pymongo import MongoClient
 
@@ -146,6 +146,7 @@ async def main():
     for entry in raw["appletv"]["devices"]:
         ip = socket.gethostbyname(entry['device']);
         config_map[ip]= entry
+        print("entry", entry);
         print("  config", ip, entry['name'], entry['device'])
         config.append(entry)
         device_map[entry['device']] = entry
@@ -172,7 +173,9 @@ async def main():
                 print("  found device", atv.address, atv.name)
 
             for key in config_map.keys():
+#                 print('key', key, config_map[key], atv_map[key]);
                 if key  in atv_map.keys():
+                    atv_map[key].set_credentials(Protocol.AirPlay, config_map[key]["credentials"]);
                     config_map[key]["appletv"] = atv_map[key]
                 else:
                     print("   ... key ", key, "not in atv_map")
@@ -209,6 +212,10 @@ async def main():
             "repeat": None,
             "shuffle": None,
             "artwork": None,
+            "contentIdentifier": None,
+            "season_number": None,
+            "episode_number": None,
+            "series_name": None,
         }
         try:
             app = "None"
@@ -292,7 +299,35 @@ async def main():
                 "repeat": convert.repeat_str(playing.repeat),
                 "shuffle": convert.shuffle_str(playing.shuffle),
                 "artwork": artwork,
+                "seasonNumber": playing.season_number if hasattr(playing,'season_number') else None,
+                "episodeNumber": playing.episode_number if hasattr(playing,'episode_number') else None,
+                "seriesName": playing.series_name if hasattr(playing,'series_name') else None,
+                "contentIdentifier": playing.content_identifier if hasattr(playing,'content_identifier') else None,
             }
+
+#             try: 
+#                 o["contentIdentifier"] = playing.content_identifier
+#             finally:
+#                 pass
+
+#             try: 
+#                 o["season_number"] = playing.season_number
+#             finally:
+#                 pass
+                
+#             try: 
+#                 o["episode_number"] = playing.episode_number
+#             finally:
+#                 pass
+                
+#             try: 
+#                 o["series_name"] = playing.series_name
+#             finally:
+#                 pass
+
+#             if convert.device_state_str(playing.device_state) == "Playing":
+#                 print(playing.__dict__)
+#                 print("")
 
             if o != conf['state']:
                 topic = "appletv/{}/status/{}".format(conf['device'], "info")
@@ -301,12 +336,19 @@ async def main():
             
             for attr, value in o.items():
 #                 print("attr", attr, "value", value, conf['state'][attr])
-                if value != conf["state"][attr]:
-                    topic = "appletv/{}/status/{}".format(conf['device'], attr)
-                    # if  name == "Office":
-                    #     print(name, "publish", topic, value)
-                    conf['state'][attr] = o[attr]
-                    MQTT.publish(topic, value, retain=True)
+                try:
+                    if value != conf["state"][attr]:
+                        topic = "appletv/{}/status/{}".format(conf['device'], attr)
+                        # if  name == "Office":
+                        #     print(name, "publish", topic, value)
+                        conf['state'][attr] = o[attr]
+                        MQTT.publish(topic, value, retain=True)
+                except Exception as ex:
+                    try:
+                        MQTT.publish(topic, value, retain=True)
+                    finally:
+                        pass
+                    
 
 
         # process queue
